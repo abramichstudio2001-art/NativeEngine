@@ -1,0 +1,13 @@
+build/
+__pycache__/
+*.pyc
+ne_cli
+*.o
+*.so
+*.dylib
+*.dll
+showcase.png
+tmp_preview.png
+.tmp_preview.png
+out/
+render*.png
