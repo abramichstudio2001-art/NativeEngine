@@ -309,7 +309,9 @@ public:
                 for (int ix = -R; ix < R; ++ix)
                     for (int iz = -R; iz < R; ++iz) {
                         float x0 = cx + ix * cell, z0 = cz + iz * cell;
-                        Vec3 p[4] = {{x0, 0, z0}, {x0 + cell, 0, z0}, {x0 + cell, 0, z0 + cell}, {x0, 0, z0 + cell}};
+                        float g = cell * 0.22f;  // bleed: overlap neighbours → no seams
+                        Vec3 p[4] = {{x0 - g, 0, z0 - g}, {x0 + cell + g, 0, z0 - g},
+                                     {x0 + cell + g, 0, z0 + cell + g}, {x0 - g, 0, z0 + cell + g}};
                         Vec3 nn(0, 1, 0);
                         // checker tint per cell with distance-based mipmap fade
                         if (m.checker > 0) {
@@ -317,7 +319,7 @@ public:
                             Vec3 col = alt ? lo : hi;
                             float dx = x0 + cell * 0.5f - eye.x, dz = z0 + cell * 0.5f - eye.z;
                             float d = std::sqrt(dx * dx + dz * dz);
-                            float fade = clampf((d - 10.0f) / 26.0f, 0.0f, 1.0f);
+                            float fade = clampf((d - 5.5f) / 17.0f, 0.0f, 1.0f);
                             col = lerp(col, mean, fade);
                             gm.albedo = col;
                         }

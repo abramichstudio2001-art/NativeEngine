@@ -40,7 +40,7 @@ public:
     int rt_passes = 0;
     float invuln = 0.0f, damage_flash = 0.0f;
 
-    float cam_yaw = -0.6f, cam_pitch = 0.42f, cam_dist = 7.5f;
+    float cam_yaw = -0.6f, cam_pitch = 0.34f, cam_dist = 5.8f;
     Vec3 cam_target;
 
     int m_floor, m_player, m_crystal, m_enemy, m_wall, m_lamp;
