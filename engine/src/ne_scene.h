@@ -190,7 +190,6 @@ struct Scene {
     // ---------------------------------------------------------- intersect ---
     bool intersect(const Vec3& o, const Vec3& d, Hit& hit) const {
         ray_count.fetch_add(1, std::memory_order_relaxed);
-        Vec3 inv_d = 1.0f / d;
         float best = hit.t;
         bool found = false;
 

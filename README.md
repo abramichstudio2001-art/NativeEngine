@@ -119,7 +119,13 @@ Meshes are indexed triangles only.
 - CPU path tracing, not a rasterized GPU pipeline — frames converge progressively.
 - One directional sun + quad area lights; no spot/point light objects yet.
 - No textures, shadows from meshes are single-sided-safe via two-sided normals.
-- Windows/MSVC build path is provided but untested in this environment.
+- **Windows**: any MinGW-w64 g++ works — including "win32 threads model"
+builds where `std::thread` fails to link (`collect2.exe: error: ld returned
+1`); the engine spawns threads through the native Win32 API instead and
+static-links the C++ runtime, so no extra DLLs are needed on PATH. MSVC
+(`cl`) also works from a Developer Command Prompt. Build paths on Windows
+are smoke-tested via a stubbed Windows API; if you hit an issue, delete
+`build/` and rerun — the exact compiler error is now shown in the traceback.
 
 ## CLI (C++ only, no Python needed)
 

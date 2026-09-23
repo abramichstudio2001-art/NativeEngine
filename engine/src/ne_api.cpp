@@ -188,5 +188,5 @@ int ne_stat_objects(NEEngine* e) {
 
 int ne_stat_threads(NEEngine* e) {
     (void)e;
-    return (int)std::max(1u, std::thread::hardware_concurrency());
+    return (int)ne::hardware_threads();
 }

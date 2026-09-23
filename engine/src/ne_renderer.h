@@ -12,8 +12,7 @@
 #pragma once
 
 #include "ne_scene.h"
-#include <thread>
-#include <mutex>
+#include "ne_threads.h"
 #include <atomic>
 #include <vector>
 #include <cstring>
@@ -34,7 +33,7 @@ public:
     Renderer(int w, int h) { resize(w, h); }
 
     void resize(int w, int h) {
-        std::lock_guard<std::mutex> lk(m_frame);
+        ne::SpinGuard lk(m_frame);
         width = w; height = h;
         accum.assign((size_t)w * h * 3, 0.0f);
         rgba.assign((size_t)w * h * 4, 0);
@@ -62,11 +61,14 @@ public:
         tiles_total = tiles_x * tiles_y;
         frame_seed.fetch_add(0x9e3779b9u);
 
-        unsigned nthreads = std::max(1u, std::thread::hardware_concurrency());
-        std::vector<std::thread> threads;
-        for (unsigned i = 0; i < nthreads; ++i)
-            threads.emplace_back(&Renderer::worker, this, spp);
-        for (auto& t : threads) t.join();
+        unsigned nthreads = ne::hardware_threads();
+        std::vector<ne::thread_handle> threads;
+        threads.reserve(nthreads);
+        for (unsigned i = 1; i < nthreads; ++i)
+            threads.push_back(ne::spawn_thread(&Renderer::thread_entry,
+                                               new WorkerArg{this, spp}));
+        worker(spp);  // calling thread takes tiles too
+        for (auto& t : threads) ne::join_thread(t);
 
         accum_samples += spp;
         double ms = std::chrono::duration<double, std::milli>(
@@ -81,9 +83,9 @@ public:
     }
 
     // Copy tonemapped RGBA8 + PNG out (thread-safe with render).
-    void get_rgba(std::vector<uint8_t>& out) { std::lock_guard<std::mutex> lk(m_frame); out = rgba; }
+    void get_rgba(std::vector<uint8_t>& out) { ne::SpinGuard lk(m_frame); out = rgba; }
     void get_png(std::vector<uint8_t>& out) {
-        std::lock_guard<std::mutex> lk(m_frame);
+        ne::SpinGuard lk(m_frame);
         if (png_dirty) { png = encode_png(rgba.data(), width, height); png_dirty = false; }
         out = png;
     }
@@ -99,7 +101,7 @@ private:
     std::atomic<uint32_t> tile_counter{0};
     std::atomic<uint32_t> frame_seed{0x1234567u};
     uint32_t tiles_total = 0;
-    std::mutex m_frame;
+    ne::SpinLock m_frame;
 
     // ------------------------------------------------------------- trace ----
     Vec3 shade_diffuse_direct(const Vec3& p, const Vec3& n, const Vec3& albedo, RNG& rng) const {
@@ -232,6 +234,26 @@ private:
         return Vec3(std::min(L.x, 40.0f), std::min(L.y, 40.0f), std::min(L.z, 40.0f));
     }
 
+    struct WorkerArg { Renderer* r; int spp; };
+
+    static NE_THREAD_ENTRY thread_entry(void* p) {
+
+        WorkerArg* a = static_cast<WorkerArg*>(p);
+
+        a->r->worker(a->spp);
+
+        delete a;
+#ifdef _WIN32
+
+        return 0;
+#else
+
+        return;
+#endif
+
+    }
+
+
     void worker(int spp) {
         uint32_t seed = frame_seed.load() ^ (uint32_t)(uintptr_t)this;
         std::vector<float> tile(TILE * TILE * 3);
@@ -279,7 +301,7 @@ private:
     }
 
     void present() {
-        std::lock_guard<std::mutex> lk(m_frame);
+        ne::SpinGuard lk(m_frame);
         float inv = 1.0f / std::max(1, accum_samples);
         for (size_t i = 0, j = 0; i < accum.size(); i += 3, j += 4) {
             float r = accum[i] * inv, g = accum[i + 1] * inv, b = accum[i + 2] * inv;

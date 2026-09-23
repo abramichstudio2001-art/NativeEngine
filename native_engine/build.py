@@ -2,6 +2,14 @@
 #  Native Engine — build.py
 #  Compiles the C++ core into a shared library. Zero external dependencies:
 #  only needs a C++17 compiler (g++ / clang++ / cl.exe) and Python 3.
+#
+#  Windows notes:
+#   - Works with ANY MinGW-w64 build, including "win32 threads model"
+#     distributions where std::thread cannot link (the engine uses the
+#     native Win32 thread API instead — see engine/src/ne_threads.h).
+#   - The GCC path links the C++ runtime statically so the resulting DLL
+#     loads without libgcc/libstdc++/winpthread on PATH.
+#   - For MSVC (cl.exe) run from a "Developer Command Prompt" shell.
 # ============================================================================
 import os
 import platform
@@ -22,16 +30,22 @@ LIB_NAME = {
 }
 
 
+def _is_msvc(cc):
+    return os.path.basename(cc).lower() in ("cl", "cl.exe")
+
+
 def _compiler():
     for cc in (os.environ.get("CXX"), "g++", "clang++", "c++"):
         if cc and shutil.which(cc):
             return cc
     cl = shutil.which("cl")
     if cl:
-        return "cl"
+        return cl
     raise RuntimeError(
-        "No C++ compiler found. Install g++ (Linux), clang (macOS: xcode-select "
-        "--install) or MSVC (Windows) and make sure it is on PATH."
+        "No C++ compiler found. Install one:\n"
+        "  Windows: MSYS2 (pacman -S mingw-w64-x86_64-gcc) or Visual Studio\n"
+        "  macOS:   xcode-select --install\n"
+        "  Linux:   sudo apt install g++"
     )
 
 
@@ -55,6 +69,32 @@ def is_build_stale():
     return _srcstamp() > os.path.getmtime(lib)
 
 
+def _gcc_commands(cc, system, lib):
+    srcs = [os.path.join(SRC_DIR, s) for s in SOURCES]
+    base_tail = ["-I" + SRC_DIR] + srcs + ["-o", lib]
+    shared = "-dynamiclib" if system == "Darwin" else "-shared"
+    static = ["-static-libgcc", "-static-libstdc++", "-static"] if system == "Windows" else []
+    threads = [] if system == "Windows" else ["-pthread"]
+
+    ladder = [
+        ["-std=c++17", "-O3", "-ffast-math", "-funroll-loops"],
+        ["-std=c++17", "-O3"],
+        ["-std=c++17", "-O2"],
+        ["-std=gnu++17", "-O2"],
+    ]
+    for flags in ladder:
+        yield [cc] + flags + threads + static + ["-fPIC", shared] + base_tail
+
+
+def _msvc_command(cc, lib):
+    srcs = [os.path.join(SRC_DIR, s) for s in SOURCES]
+    stem = os.path.splitext(lib)[0]
+    return ([cc, "/nologo", "/std:c++17", "/O2", "/MD", "/EHsc", "/utf-8",
+             "/D_WIN32_WINNT=0x0A00", "/I" + SRC_DIR] + srcs +
+            ["/LD", f"/Fo:{stem}.obj.", f"/Fe:{os.path.basename(lib)}",
+             "/link", f"/OUT:{lib}"])
+
+
 def build(verbose=True, force=False):
     """Compile the native core if needed. Returns path to the shared library."""
     os.makedirs(BUILD_DIR, exist_ok=True)
@@ -64,31 +104,52 @@ def build(verbose=True, force=False):
             print(f"[native-engine] up-to-date: {os.path.relpath(lib, ROOT)}")
         return lib
 
+    # remove stale/partial output so the linker never trips on it
+    for p in (lib, os.path.splitext(lib)[0] + ".lib"):
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except PermissionError:
+            raise RuntimeError(
+                f"{p} is locked — close any running Python/preview that "
+                "loaded it, then retry.")
+
     cc = _compiler()
     system = platform.system()
-    sources = [os.path.join(SRC_DIR, s) for s in SOURCES]
     t0 = time.time()
-    if system == "Windows":
-        cmd = [cc, "/std:c++17", "/O2", "/MD", "/EHsc", "/D_USRDLL"]
-        cmd += ["/I" + SRC_DIR] + sources
-        cmd += ["/LD", "/Fe:" + lib, "/link", "/OUT:" + lib]
-    else:
-        pic = "-fPIC"
-        cmd = [cc, "-std=c++17", "-O3", "-ffast-math", "-funroll-loops",
-               "-pthread", pic, "-shared", "-I" + SRC_DIR]
-        if system == "Darwin":
-            cmd += ["-dynamiclib"]
-        cmd += sources + ["-o", lib]
     if verbose:
         print(f"[native-engine] compiling with {cc} ...")
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        sys.stderr.write(proc.stderr[-8000:] if proc.stderr else "compile failed\n")
-        raise RuntimeError("Native engine build failed — see compiler output above.")
-    if verbose:
-        print(f"[native-engine] built in {time.time() - t0:.1f}s -> "
-              f"{os.path.relpath(lib, ROOT)}")
-    return lib
+
+    errors = []
+    if _is_msvc(cc):
+        cmds = [_msvc_command(cc, lib)]
+    else:
+        cmds = list(_gcc_commands(cc, system, lib))
+
+    for cmd in cmds:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              cwd=os.path.dirname(lib))
+        if proc.returncode == 0:
+            if verbose:
+                print(f"[native-engine] built in {time.time() - t0:.1f}s -> "
+                      f"{os.path.relpath(lib, ROOT)}")
+            return lib
+        err = ((proc.stderr or "") + "\n" + (proc.stdout or "")).strip()
+        errors.append((cmd, err))
+
+    # surface the REAL compiler/linker error in the traceback, not just "failed"
+    last_cmd, last_err = errors[-1]
+    def _fmt(err):
+        lines = [l for l in err.splitlines() if "error" in l.lower()
+                 or "undefined reference" in l.lower()]
+        return "\n".join(lines[:12]) if lines else err[-1500:]
+    summary = "\n\n".join(f"> {' '.join(c)}\n{_fmt(e)}" for c, e in errors[:1])
+    raise RuntimeError(
+        "Native engine build failed.\n\n" + summary
+        + "\n\n(On Windows: this project needs no special MinGW flavor — "
+          "any g++ works; if 'ld returned 1' mentions Permission denied or "
+          "file format, delete the build/ folder and close other Python "
+          "processes, then run again.)")
 
 
 if __name__ == "__main__":
