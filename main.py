@@ -85,15 +85,15 @@ def main():
     ap.add_argument("--samples", type=int, default=128, help="samples for --still")
     ap.add_argument("--frames", type=int, default=0, help="render N PNG frames and exit")
     ap.add_argument("--out", default="render.png", help="output path for --still")
-    ap.add_argument("--game", action="store_true",
-                    help="launch the native NEON RUNNER game window")
+    ap.add_argument("--editor", action="store_true",
+                    help="launch the native RTX Editor window")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
-    if args.game:
+    if args.editor:
         import sys as _sys
-        limit = 0 if _sys.platform.startswith("win") else 240
-        ne.run_native_game(args.width, args.height, limit)
+        limit = 0 if _sys.platform.startswith("win") else 150
+        ne.run_editor(args.width or 1280, args.height or 720, limit)
         return
 
     t0 = time.time()

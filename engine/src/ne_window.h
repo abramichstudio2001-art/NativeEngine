@@ -21,6 +21,8 @@ public:
     bool lmb = false, rmb = false;
     int key_down[256] = {};       // held state
     int key_pressed[256] = {};    // edge events (cleared each pump)
+    float wheel = 0;              // accumulated wheel ticks since last pump
+    int lmb_edge = 0;             // LMB went down this pump
     bool alive = false;
 
     double now() const {
@@ -71,10 +73,11 @@ inline LRESULT CALLBACK Window::wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) 
     case WM_MOUSEMOVE:
         w->mx = (float)(short)LOWORD(lp); w->my = (float)(short)HIWORD(lp);
         return 0;
-    case WM_LBUTTONDOWN: w->lmb = true; return 0;
+    case WM_LBUTTONDOWN: w->lmb = true; w->lmb_edge = 1; return 0;
     case WM_LBUTTONUP:   w->lmb = false; return 0;
     case WM_RBUTTONDOWN: w->rmb = true; return 0;
     case WM_RBUTTONUP:   w->rmb = false; return 0;
+    case WM_MOUSEWHEEL: w->wheel += (float)((short)HIWORD(wp)) / 120.0f; return 0;
     case WM_CLOSE: case WM_DESTROY:
         w->alive = false;
         PostQuitMessage(0);
@@ -145,6 +148,7 @@ inline bool Window::pump() {
     if (lastmx_ < 0) mdx = mdy = 0;
     lastmx_ = mx; lastmy_ = my;
     std::memset(key_pressed, 0, sizeof(key_pressed));
+    lmb_edge = 0; wheel = 0;
     return alive;
 }
 
@@ -162,6 +166,7 @@ inline bool Window::pump() {
     if (lastmx_ < 0) mdx = mdy = 0;
     lastmx_ = mx; lastmy_ = my;
     std::memset(key_pressed, 0, sizeof(key_pressed));
+    lmb_edge = 0; wheel = 0;
     return alive;
 }
 inline void Window::set_title(const char*) {}

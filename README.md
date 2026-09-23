@@ -1,37 +1,40 @@
 # Native Engine
 
-A **3D game engine with real-time ray tracing**, written from scratch:
+A **3D game engine core with a real-time ray-traced RTX editor UI**, written
+from scratch:
 
-- **Playable right now — no install**: `bin/NativeEngine.exe` is a self-contained
-  Windows desktop app (309 KB, zero DLL dependencies) that boots the built-in
-  game **NEON RUNNER**: a native 60 fps window (Win32), WASD/Space/Shift
-  movement with jumping + boost, chase-AI enemies, crystal collectibles,
-  particle bursts, lives/score/timer HUD — and press **F1** to melt the whole
-  scene into a progressive **path-traced RTX frame** while the game keeps
-  simulating behind it.
+- **Desktop app, zero install** — `bin/NativeEngine.exe` is a self-contained
+  Windows executable (300 KB, system DLLs only). It opens the **RTX Editor**:
+  native window, streaming path-traced viewport, outliner, material &
+  transform inspector, sky/sun controls, render settings, snapshot export.
+- **C++17 core** — path tracer (GI, metals, refractive glass, soft shadows,
+  emissive lights, BVH, multithreaded, ~8 Mrays/s) wrapped in an
+  **interactive streaming renderer**: the viewport never blocks — each frame
+  spends a few milliseconds rendering whatever 32px tiles fit the budget,
+  tonemaps the partial state, **bilateral-dennoises** and upscales.
+  Interaction shows lit ray-traced motion at UI framerate while quality
+  converges underneath — the "RTX feels fast" model.
+- **Python runtime** — `native_engine` package: builds or reuses the prebuilt
+  library, scripting API for scenes/materials/camera, live browser preview,
+  and `ne.run_editor()` to launch the native app from Python.
+
+No SDL, no Qt, no NumPy, no pip requirements — just Python 3 and (optionally)
+a C++17 compiler to rebuild from source.
 
 ```
-Double-click  bin\NativeEngine.exe        <- the desktop application (Windows)
-python3 main.py --game                    <- same game via the Python runtime
-python3 examples/game_desktop.py          <- write-your-own-game API demo
+Double-click  bin\NativeEngine.exe        <- RTX Editor desktop app (Windows)
+python3 main.py --editor                  <- same app via the Python runtime
 python3 main.py                           <- live browser preview of the showcase
-python3 main.py --still --samples 128     <- cinematic 4K-ready still renders
+python3 main.py --still --samples 128     <- high-quality cinematic stills
 ```
 
-- **C++17 core** — path-traced global illumination, mirror/rough reflections,
-  refractive glass, soft shadows, emissive area lights, depth-of-field,
-  procedural meshes, SIMD-friendly math, triangle BVH acceleration,
-  tiled multithreaded rendering (~7–10 M rays/s on 2 cores), filmic ACES
-  tonemapping, and a dependency-free PNG encoder (custom DEFLATE).
-- **Python runtime** — `native_engine` package that auto-compiles the core on
-  first import (only needs `g++`/`clang++`), exposes a game-style scene API,
-  and serves a **live browser preview** of the renderer with no external
-  packages (stdlib only).
+![Native Engine RTX Editor](examples/editor_screen.png)
 
-No SDL, no OpenCV, no NumPy, no pip requirements — just Python 3 and a C++17
-compiler.
-
----
+**Editor controls:** LMB pick object · RMB orbit · wheel zoom (viewport) /
+scroll inspector (right panel) · sliders edit transforms, materials
+(albedo/metallic/roughness/ior/glass/emission/checker), sun & sky, exposure,
+RT resolution scale, target SPP, frame budget, denoise, auto-orbit ·
+`SNAPSHOT` writes a converged full-res PNG · `SAVE/LOAD` persist `scene.nes`.
 
 ## Quick start
 
@@ -122,7 +125,7 @@ native_engine/             Python package
   build.py                 detects g++/clang++/MSVC, builds build/libNativeEngine.*
   engine.py                ctypes bindings + high-level App/Material/Object API
   server.py                live preview HTTP server (stdlib only)
-main.py                    showcase runner: live preview | still | animation
+main.py                    runner: editor | browser preview | still | animation
 ```
 
 The engine is a **path tracer with progressive refinement**: each frame adds

@@ -2,7 +2,7 @@
 #  Native Engine — a from-scratch ray-traced 3D game engine.
 #  C++17 core (path tracing, BVH, multithreaded) + Python runtime.
 # ============================================================================
-from .engine import App, Vec3, Material, Object, Window, run_native_game
+from .engine import App, Vec3, Material, Object, Window, run_editor
 from . import build as build_module
 from .build import build as build_native
 from . import server
@@ -18,6 +18,6 @@ def version():
 
 
 __all__ = [
-    "App", "Vec3", "Material", "Object", "Window", "run_native_game",
+    "App", "Vec3", "Material", "Object", "Window", "run_editor",
     "build_native", "build_module", "server", "version", "__version__",
 ]

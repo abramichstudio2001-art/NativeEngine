@@ -8,15 +8,15 @@ rem ============================================================================
 where g++ >nul 2>nul
 if %errorlevel%==0 (
     echo [native-engine] building with g++ ...
-    g++ -std=c++17 -O3 -ffast-math -s -static -Iengine/src engine/src/ne_app.cpp -mwindows -luser32 -lgdi32 -o bin\NativeEngine.exe
-    g++ -std=c++17 -O3 -ffast-math -s -static -shared -Iengine/src engine/src/ne_api.cpp engine/src/ne_app.cpp -luser32 -lgdi32 -o bin\NativeEngine.dll
+    g++ -std=c++17 -O3 -ffast-math -s -static -Iengine/src engine/src/ne_editor.cpp -mwindows -luser32 -lgdi32 -o bin\NativeEngine.exe
+    g++ -std=c++17 -O3 -ffast-math -s -static -shared -Iengine/src engine/src/ne_api.cpp engine/src/ne_editor.cpp -luser32 -lgdi32 -o bin\NativeEngine.dll
     goto done
 )
 py -m ziglang version >nul 2>nul
 if %errorlevel%==0 (
     echo [native-engine] building with zig ...
-    py -m ziglang c++ -std=c++17 -O3 -ffast-math -s -static -Iengine/src engine/src/ne_app.cpp -mwindows -luser32 -lgdi32 -o bin\NativeEngine.exe
-    py -m ziglang c++ -std=c++17 -O3 -ffast-math -s -static -shared -Iengine/src engine/src/ne_api.cpp engine/src/ne_app.cpp -luser32 -lgdi32 -o bin\NativeEngine.dll
+    py -m ziglang c++ -std=c++17 -O3 -ffast-math -s -static -Iengine/src engine/src/ne_editor.cpp -mwindows -luser32 -lgdi32 -o bin\NativeEngine.exe
+    py -m ziglang c++ -std=c++17 -O3 -ffast-math -s -static -shared -Iengine/src engine/src/ne_api.cpp engine/src/ne_editor.cpp -luser32 -lgdi32 -o bin\NativeEngine.dll
     goto done
 )
 echo No compiler found. Either install MSYS2 mingw-w64 gcc, or:
@@ -25,7 +25,7 @@ echo (Zig includes a full C++ toolchain - no Visual Studio needed.)
 exit /b 1
 :done
 if exist bin\NativeEngine.exe (
-    echo Built bin\NativeEngine.exe - double-click it to play NEON RUNNER.
+    echo Built bin\NativeEngine.exe - double-click it to open the RTX Editor.
 ) else (
     echo Build failed. Full error output above.
 )

@@ -35,6 +35,7 @@ public:
     void resize(int w, int h) {
         ne::SpinGuard lk(m_frame);
         width = w; height = h;
+        strm.active = false;
         accum.assign((size_t)w * h * 3, 0.0f);
         rgba.assign((size_t)w * h * 4, 0);
         png.clear();
@@ -82,6 +83,125 @@ public:
         return ms;
     }
 
+    // ============== interactive viewport streaming =====================
+    // The editor path: NO blocking full-frame render. begin_stream() queues a
+    // pass over all tiles; each stream_step(budget_us) call renders whatever
+    // tiles fit in the time budget (round-robin, best-effort), present_stream()
+    // tonemaps the CURRENT partial state. The viewport therefore stays at UI
+    // framerate while frames converge underneath — the "RTX feels fast" model
+    // (plus denoising on top in the app layer).
+    float exposure = 1.15f;
+    const uint8_t* pixels() const { return rgba.data(); }   // valid after present*()
+
+    void begin_stream(int spp, uint32_t target_passes) {
+        ne::SpinGuard lk(m_frame);
+        std::fill(accum.begin(), accum.end(), 0.0f);
+        int tiles_x = (width + TILE - 1) / TILE;
+        int tiles_y = (height + TILE - 1) / TILE;
+        strm.total = (uint32_t)tiles_x * (uint32_t)tiles_y;
+        strm.tile.assign(TILE * TILE * 3, 0.0f);
+        strm.spp = spp < 1 ? 1 : spp;
+        strm.target = target_passes < 1 ? 1 : target_passes;
+        strm.cursor = 0;
+        strm.active = true;
+        passes.assign(strm.total, 0u);
+        frame_seed.fetch_add(0x9e3779b9u);
+        scene.ray_count.store(0, std::memory_order_relaxed);
+        accum_samples = 0;
+    }
+    // Render tiles until the time budget is exhausted. true = more work queued.
+    bool stream_step(int budget_us) {
+        if (!strm.active) return false;
+        auto t0 = std::chrono::steady_clock::now();
+        uint64_t seed = frame_seed.load() ^ 0x5bd1e995ull;
+        bool rendered = false;
+        uint32_t done = 0;
+        for (uint32_t n = 0; n < strm.total; ++n) {
+            uint32_t id = strm.cursor;
+            strm.cursor = (id + 1u) % strm.total;
+            if (passes[id] >= strm.target) { ++done; continue; }
+            render_tile(id, strm.spp, strm.tile,
+                        ((((uint64_t)id + (uint64_t)passes[id] * strm.total) << 20) ^ seed));
+            merge_tile(id, strm.tile);
+            ++passes[id];
+            rendered = true;
+            long el = (long)std::chrono::duration_cast<std::chrono::microseconds>(
+                          std::chrono::steady_clock::now() - t0).count();
+            if (el >= budget_us) break;
+        }
+        // recompute completion
+        done = 0;
+        for (size_t i = 0; i < passes.size(); ++i) done += (passes[i] >= strm.target);
+        if (done == strm.total) {
+            strm.active = false;
+            accum_samples = (int)(strm.target * (uint32_t)strm.spp);
+        }
+        return rendered && strm.active;
+    }
+    uint32_t stream_min_passes() const {
+        uint32_t m = strm.target;
+        for (size_t i = 0; i < passes.size(); ++i) if (passes[i] < m) m = passes[i];
+        return m;
+    }
+    uint32_t stream_target_passes() const { return strm.target; }
+    bool stream_active() const { return strm.active; }
+    int view_w() const { return width; }
+    int view_h() const { return height; }
+
+    void present_stream() {
+        ne::SpinGuard lk(m_frame);
+        int tiles_x = (width + TILE - 1) / TILE;
+        float inv_spp = 1.0f / (float)(strm.spp > 0 ? strm.spp : 1);
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                uint32_t tid = (uint32_t)(y / TILE) * (uint32_t)tiles_x + (uint32_t)(x / TILE);
+                uint32_t p = tid < (uint32_t)passes.size() ? passes[tid] : 1;
+                if (p == 0) p = 1;
+                float inv = exposure * inv_spp / (float)p;
+                size_t i = ((size_t)y * width + x) * 3, j = i / 3 * 4;
+                rgba[j]     = (uint8_t)(std::pow(aces(accum[i]     * inv), 1.0f / 2.2f) * 255.0f + 0.5f);
+                rgba[j + 1] = (uint8_t)(std::pow(aces(accum[i + 1] * inv), 1.0f / 2.2f) * 255.0f + 0.5f);
+                rgba[j + 2] = (uint8_t)(std::pow(aces(accum[i + 2] * inv), 1.0f / 2.2f) * 255.0f + 0.5f);
+                rgba[j + 3] = 255;
+            }
+        }
+        png_dirty = true;
+    }
+
+    // Edge-avoiding bilateral denoise of the 8-bit frame (in place, ping-pong).
+    void denoise() {
+        ne::SpinGuard lk(m_frame);
+        std::vector<uint8_t> out(rgba.size());
+        const int W = width, H = height;
+        const float sig = 18.0f;   // luma sigma (8-bit units)
+        auto lum = [&](int x, int y) {
+            size_t j = ((size_t)y * W + x) * 4;
+            return 0.299f * rgba[j] + 0.587f * rgba[j + 1] + 0.114f * rgba[j + 2];
+        };
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x) {
+                float l0 = lum(x, y);
+                float ar = 0, ag = 0, ab = 0, ws = 0;
+                for (int dy = -2; dy <= 2; ++dy) {
+                    int yy = y + dy; if (yy < 0 || yy >= H) continue;
+                    for (int dx = -2; dx <= 2; ++dx) {
+                        int xx = x + dx; if (xx < 0 || xx >= W) continue;
+                        float l1 = lum(xx, yy);
+                        float dl = l1 - l0;
+                        float wgt = std::exp(-(dl * dl) / (2 * sig * sig)) /
+                                   (1.0f + 0.25f * (float)(dx * dx + dy * dy));
+                        size_t j = ((size_t)yy * W + xx) * 4;
+                        ar += wgt * rgba[j]; ag += wgt * rgba[j + 1]; ab += wgt * rgba[j + 2];
+                        ws += wgt;
+                    }
+                }
+                size_t j = ((size_t)y * W + x) * 4;
+                out[j] = (uint8_t)(ar / ws); out[j + 1] = (uint8_t)(ag / ws);
+                out[j + 2] = (uint8_t)(ab / ws); out[j + 3] = 255;
+            }
+        rgba.swap(out);
+    }
+
     // Copy tonemapped RGBA8 + PNG out (thread-safe with render).
     void get_rgba(std::vector<uint8_t>& out) { ne::SpinGuard lk(m_frame); out = rgba; }
     void get_png(std::vector<uint8_t>& out) {
@@ -102,6 +222,13 @@ private:
     std::atomic<uint32_t> frame_seed{0x1234567u};
     uint32_t tiles_total = 0;
     ne::SpinLock m_frame;
+    struct {
+        uint32_t cursor = 0, total = 0, target = 3;
+        int spp = 1;
+        std::vector<float> tile;
+        bool active = false;
+    } strm;
+    std::vector<uint32_t> passes;
 
     // ------------------------------------------------------------- trace ----
     Vec3 shade_diffuse_direct(const Vec3& p, const Vec3& n, const Vec3& albedo, RNG& rng) const {
@@ -254,43 +381,52 @@ private:
     }
 
 
+    void render_tile(uint32_t tile_id, int spp, std::vector<float>& tile, uint64_t seed) const {
+        int tiles_x = (width + TILE - 1) / TILE;
+        int tx = (int)(tile_id % (uint32_t)tiles_x), ty = (int)(tile_id / (uint32_t)tiles_x);
+        int x0 = tx * TILE, y0 = ty * TILE;
+        int x1 = std::min(x0 + TILE, width), y1 = std::min(y0 + TILE, height);
+        for (int y = y0; y < y1; ++y) {
+            for (int x = x0; x < x1; ++x) {
+                RNG rng;
+                rng.seed(((uint64_t)((((size_t)y * width + x) * 2654435761u)) ^ seed),
+                         0xda3e39cb94b95bdbull);
+                Vec3 sum(0.0f);
+                for (int s = 0; s < spp; ++s) {
+                    float jx = rng.next_float(), jy = rng.next_float();
+                    Vec3 o, d;
+                    scene.camera.make_ray(x + jx, y + jy, width, height, rng, o, d);
+                    sum += trace(o, d, rng);
+                }
+                int li = ((y - y0) * TILE + (x - x0)) * 3;
+                tile[li] = sum.x; tile[li + 1] = sum.y; tile[li + 2] = sum.z;
+            }
+        }
+    }
+
+    void merge_tile(uint32_t tile_id, const std::vector<float>& tile) {
+        int tiles_x = (width + TILE - 1) / TILE;
+        int tx = (int)(tile_id % (uint32_t)tiles_x), ty = (int)(tile_id / (uint32_t)tiles_x);
+        int x0 = tx * TILE, y0 = ty * TILE;
+        int x1 = std::min(x0 + TILE, width), y1 = std::min(y0 + TILE, height);
+        for (int y = y0; y < y1; ++y)
+            for (int x = x0; x < x1; ++x) {
+                int li = ((y - y0) * TILE + (x - x0)) * 3;
+                size_t gi = ((size_t)y * width + x) * 3;
+                accum[gi] += tile[li];
+                accum[gi + 1] += tile[li + 1];
+                accum[gi + 2] += tile[li + 2];
+            }
+    }
+
     void worker(int spp) {
         uint32_t seed = frame_seed.load() ^ (uint32_t)(uintptr_t)this;
         std::vector<float> tile(TILE * TILE * 3);
         for (;;) {
             uint32_t tile_id = tile_counter.fetch_add(1);
             if (tile_id >= tiles_total) break;
-            int tx = (int)(tile_id % ((width + TILE - 1) / TILE));
-            int ty = (int)(tile_id / ((width + TILE - 1) / TILE));
-            RNG rng;
-            rng.seed(((uint64_t)tile_id << 20) ^ seed, 0xda3e39cb94b95bdbull);
-
-            int x0 = tx * TILE, y0 = ty * TILE;
-            int x1 = std::min(x0 + TILE, width), y1 = std::min(y0 + TILE, height);
-
-            for (int y = y0; y < y1; ++y) {
-                for (int x = x0; x < x1; ++x) {
-                    Vec3 sum(0.0f);
-                    for (int s = 0; s < spp; ++s) {
-                        float jx = rng.next_float(), jy = rng.next_float();
-                        Vec3 o, d;
-                        scene.camera.make_ray(x + jx, y + jy, width, height, rng, o, d);
-                        sum += trace(o, d, rng);
-                    }
-                    // store raw sums: present() divides by the running total
-                    int li = ((y - y0) * TILE + (x - x0)) * 3;
-                    tile[li] = sum.x; tile[li + 1] = sum.y; tile[li + 2] = sum.z;
-                }
-            }
-            // merge tile into accumulation buffer (tiles are disjoint -> safe)
-            for (int y = y0; y < y1; ++y)
-                for (int x = x0; x < x1; ++x) {
-                    int li = ((y - y0) * TILE + (x - x0)) * 3;
-                    size_t gi = ((size_t)y * width + x) * 3;
-                    accum[gi] += tile[li];
-                    accum[gi + 1] += tile[li + 1];
-                    accum[gi + 2] += tile[li + 2];
-                }
+            render_tile(tile_id, spp, tile, ((uint64_t)tile_id << 20) ^ seed);
+            merge_tile(tile_id, tile);
         }
     }
 

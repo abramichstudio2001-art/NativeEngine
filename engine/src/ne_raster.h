@@ -69,6 +69,7 @@ public:
         sx = (0.5f + 0.5f * x / (z * tan_half * aspect)) * width;
         sy = (0.5f - 0.5f * y / (z * tan_half)) * height;
         iz = 1.0f / z;
+        return z;
     }
 
     // ----------------------------------------------------------- shading ----

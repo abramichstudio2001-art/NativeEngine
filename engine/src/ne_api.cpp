@@ -6,7 +6,6 @@
 #include "ne_renderer.h"
 #include "ne_raster.h"
 #include "ne_window.h"
-#include "ne_game.h"
 #include <cstring>
 #include <new>
 
@@ -242,9 +241,9 @@ void ne_hud_text(NEEngine* e, int x, int y, int scale, const char* s, unsigned c
     if (SHIM && s) SHIM->raster.text(x, y, s, scale, color);
 }
 
-// ---- self-contained native game --------------------------------------------------
-extern "C" int ne_game_app_main(int w, int h, int frame_limit, const char* shot);
+// ---- native editor application -----------------------------------------------------
+extern "C" int ne_editor_main(int w, int h, int frame_limit, const char* shot);
 
-void ne_run_native_game(int width, int height, int frame_limit) {
-    ne_game_app_main(width, height, frame_limit, nullptr);
+void ne_run_editor(int width, int height, int frame_limit) {
+    ne_editor_main(width, height, frame_limit, nullptr);
 }

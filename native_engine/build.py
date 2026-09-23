@@ -22,7 +22,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = os.path.join(ROOT, "engine", "src")
 BUILD_DIR = os.path.join(ROOT, "build")
 
-SOURCES = ["ne_api.cpp", "ne_app.cpp"]
+SOURCES = ["ne_api.cpp", "ne_editor.cpp"]
 LIB_NAME = {
     "Linux": "libNativeEngine.so",
     "Darwin": "libNativeEngine.dylib",

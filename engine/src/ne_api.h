@@ -81,5 +81,5 @@ NE_EXPORT const unsigned char* ne_raster_pixels(NEEngine* e, int* w, int* h);
 NE_EXPORT void ne_hud_text(NEEngine* e, int x, int y, int scale, const char* s,
                            unsigned color);
 
-// ---- self-contained native game ("NEON RUNNER"); frame_limit 0 = until closed --
-NE_EXPORT void ne_run_native_game(int width, int height, int frame_limit);
+// ---- native editor application; frame_limit 0 = run until window closed ----------
+NE_EXPORT void ne_run_editor(int width, int height, int frame_limit);

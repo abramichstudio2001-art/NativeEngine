@@ -102,7 +102,7 @@ def _load():
     lib.ne_raster_pixels.restype = ctypes.POINTER(ctypes.c_ubyte)
     lib.ne_hud_text.argtypes = [P(_CEngine), ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                 ctypes.c_char_p, ctypes.c_uint]
-    lib.ne_run_native_game.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    lib.ne_run_editor.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
     lib._cwin = ctypes.POINTER(_CWindow)
     return lib
 
@@ -482,7 +482,7 @@ class Window:
 K_SPACE, K_SHIFT, K_ESCAPE, K_F1 = 0x20, 0x10, 0x1B, 0x70
 
 
-def run_native_game(width=1024, height=576, frame_limit=0):
-    """Launch the built-in NEON RUNNER native game (blocking). On Linux/macOS
-    the window layer is headless, so pass a frame_limit for demos/CI."""
-    _load().ne_run_native_game(int(width), int(height), int(frame_limit))
+def run_editor(width=1280, height=720, frame_limit=0):
+    """Launch the native RTX Editor application window (blocking). On
+    Linux/macOS the window layer is headless → pass a frame_limit for demos."""
+    _load().ne_run_editor(int(width), int(height), int(frame_limit))
