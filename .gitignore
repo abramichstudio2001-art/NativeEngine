@@ -1,0 +1,17 @@
+build/
+__pycache__/
+*.pyc
+ne_cli
+*.o
+*.so
+*.dylib
+*.dll
+!bin/NativeEngine.dll
+!bin/NativeEngine.exe
+!bin/libNativeEngine.so
+showcase.png
+tmp_preview.png
+.tmp_preview.png
+out/
+render*.png
+projects/
