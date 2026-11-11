@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- open book -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M30,40 C38,36 47,36 52,41 L52,73 C47,69 38,69 30,72 Z" />
+    <path android:fillColor="#E4E6FF"
+        android:pathData="M78,40 C70,36 61,36 56,41 L56,73 C61,69 70,69 78,72 Z" />
+    <!-- bookmark -->
+    <path android:fillColor="#FFB547"
+        android:pathData="M64,38.5 L71,38 L71,52 L67.5,49 L64,52 Z" />
+    <!-- sparkle -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,24 L56,29 L61,31 L56,33 L54,38 L52,33 L47,31 L52,29 Z" />
+</vector>
